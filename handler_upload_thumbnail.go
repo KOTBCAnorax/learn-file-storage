@@ -1,7 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -54,7 +57,16 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	assetPath := getAssetPath(videoID, mediaType)
+	randomBytes := make([]byte, 32)
+	_, err = rand.Read(randomBytes)
+	if err != nil {
+		log.Printf("error: %v\n", err)
+		respondWithError(w, 500, "Something went wrong", nil)
+		return
+	}
+
+	randomVideoID := base64.RawURLEncoding.EncodeToString(randomBytes)
+	assetPath := getAssetPath(randomVideoID, mediaType)
 	assetDiskPath := cfg.getAssetDiskPath(assetPath)
 
 	dst, err := os.Create(assetDiskPath)
