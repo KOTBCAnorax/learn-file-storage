@@ -34,3 +34,7 @@ func mediaTypeToExt(mediaType string) string {
 	}
 	return "." + parts[1]
 }
+
+func (cfg *apiConfig) createVideoURL(name string) string {
+	return "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + name
+}
