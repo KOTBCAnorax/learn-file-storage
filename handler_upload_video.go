@@ -98,11 +98,11 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 	switch aspectRatioPrefix {
 	case "16:9":
-		aspectRatioPrefix = "/landscape/"
+		aspectRatioPrefix = "landscape/"
 	case "9:16":
-		aspectRatioPrefix = "/portrait/"
+		aspectRatioPrefix = "portrait/"
 	default:
-		aspectRatioPrefix = "/other/"
+		aspectRatioPrefix = "other/"
 	}
 
 	proccessedpath, err := processVideoForFastStart(tmp.Name())
@@ -144,7 +144,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoURL := cfg.createVideoURL(randomVideoID)
+	videoURL := cfg.s3Bucket + "," + randomVideoID
 	video.VideoURL = &videoURL
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
@@ -153,7 +153,14 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, struct{}{})
+	signedVideo, err := cfg.dbVideoToSignedVideo(video)
+	if err != nil {
+		fmt.Printf("error while presigning url: %v\n", err)
+		respondWithError(w, 500, "Internal error", nil)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, signedVideo)
 }
 
 func processVideoForFastStart(filepath string) (string, error) {

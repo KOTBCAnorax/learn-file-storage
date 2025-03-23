@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 )
 
 func (cfg apiConfig) ensureAssetsDir() error {
@@ -42,6 +47,19 @@ func (cfg *apiConfig) createVideoURL(name string) string {
 	return "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + name
 }
 
+func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
+	presignedClient := s3.NewPresignClient(s3Client)
+	request, err := presignedClient.PresignGetObject(context.TODO(), &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	}, s3.WithPresignExpires(expireTime))
+	if err != nil {
+		return "", err
+	}
+
+	return request.URL, nil
+}
+
 func getVideoAspectRatio(path string) (string, error) {
 	const landscapeRatio = float64(16.0 / 9.0)
 	const portraitRatio = float64(9.0 / 16.0)
@@ -67,8 +85,7 @@ func getVideoAspectRatio(path string) (string, error) {
 	data := FFProbeOutput{}
 	err = json.Unmarshal(stdout.Bytes(), &data)
 	if err != nil {
-		fmt.Println("Failed to unmarshal")
-		return "", err
+		return "", fmt.Errorf("failed to unmarshal: %v", err)
 	}
 
 	aspectRatio := float64(data.Streams[0].Width) / float64(data.Streams[0].Height)
@@ -79,4 +96,33 @@ func getVideoAspectRatio(path string) (string, error) {
 	} else {
 		return "other", nil
 	}
+}
+
+func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
+	// Check if VideoURL is nil or empty
+	if video.VideoURL == nil {
+		// Return the video as is for drafts without a video
+		return video, nil
+	}
+
+	if *video.VideoURL == "" {
+		return video, nil
+	}
+
+	bucketAndKey := strings.Split(*video.VideoURL, ",")
+	if len(bucketAndKey) != 2 {
+		return database.Video{}, fmt.Errorf("video url invalid")
+	}
+
+	bucket := bucketAndKey[0]
+	key := bucketAndKey[1]
+	expireTime := 10 * time.Minute
+
+	presignedURL, err := generatePresignedURL(cfg.s3Client, bucket, key, expireTime)
+	if err != nil {
+		return database.Video{}, fmt.Errorf("failed to generate presigned url: %v", err)
+	}
+	video.VideoURL = &presignedURL
+
+	return video, nil
 }
