@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -9,6 +10,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"os/exec"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -103,6 +105,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		aspectRatioPrefix = "/other/"
 	}
 
+	proccessedpath, err := processVideoForFastStart(tmp.Name())
+	if err != nil {
+		fmt.Printf("error while proccessing video for fast start: %v\n", err)
+		respondWithError(w, 500, "Internal error", nil)
+		return
+	}
+
+	videoForUpload, err := os.Open(proccessedpath)
+	if err != nil {
+		fmt.Printf("error while opening proccesed video file: %v\n", err)
+		respondWithError(w, 500, "Internal error", nil)
+		return
+	}
+	defer os.Remove(proccessedpath)
+	defer videoForUpload.Close()
+
 	randomBytes := make([]byte, 32)
 	_, err = rand.Read(randomBytes)
 	if err != nil {
@@ -116,7 +134,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	params := s3.PutObjectInput{
 		Bucket:      aws.String(cfg.s3Bucket),
 		Key:         aws.String(randomVideoID),
-		Body:        tmp,
+		Body:        videoForUpload,
 		ContentType: aws.String(mediaType),
 	}
 	_, err = cfg.s3Client.PutObject(context.Background(), &params)
@@ -136,4 +154,19 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondWithJSON(w, http.StatusOK, struct{}{})
+}
+
+func processVideoForFastStart(filepath string) (string, error) {
+	outputfile := filepath + ".processing"
+	cmd := exec.Command("ffmpeg", "-i", filepath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", outputfile)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg error: %w, stderr: %s", err, stderr.String())
+	}
+
+	return outputfile, nil
 }
