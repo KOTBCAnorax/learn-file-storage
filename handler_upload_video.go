@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -72,7 +72,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	tmp, err := os.CreateTemp("", "tubely-upload.mp4")
 	if err != nil {
-		log.Printf("error: %v\n", err)
+		fmt.Printf("error while creating temporary file: %v\n", err)
 		respondWithError(w, 500, "Internal error", nil)
 		return
 	}
@@ -81,22 +81,37 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	_, err = io.Copy(tmp, file)
 	if err != nil {
-		log.Printf("error: %v\n", err)
+		fmt.Printf("error while copying tmp file to memory: %v\n", err)
 		respondWithError(w, 500, "Internal error", nil)
 		return
 	}
 
 	tmp.Seek(0, io.SeekStart)
 
+	aspectRatioPrefix, err := getVideoAspectRatio(tmp.Name())
+	if err != nil {
+		fmt.Printf("error while getting aspect ratio: %v\n", err)
+		respondWithError(w, 500, "Internal error", nil)
+		return
+	}
+	switch aspectRatioPrefix {
+	case "16:9":
+		aspectRatioPrefix = "/landscape/"
+	case "9:16":
+		aspectRatioPrefix = "/portrait/"
+	default:
+		aspectRatioPrefix = "/other/"
+	}
+
 	randomBytes := make([]byte, 32)
 	_, err = rand.Read(randomBytes)
 	if err != nil {
-		log.Printf("error: %v\n", err)
+		fmt.Printf("error while generating random name: %v\n", err)
 		respondWithError(w, 500, "Something went wrong", nil)
 		return
 	}
 
-	randomVideoID := base64.RawURLEncoding.EncodeToString(randomBytes) + ".mp4"
+	randomVideoID := aspectRatioPrefix + base64.RawURLEncoding.EncodeToString(randomBytes) + ".mp4"
 
 	params := s3.PutObjectInput{
 		Bucket:      aws.String(cfg.s3Bucket),
@@ -106,7 +121,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 	_, err = cfg.s3Client.PutObject(context.Background(), &params)
 	if err != nil {
-		log.Printf("error: %v\n", err)
+		fmt.Printf("error while uploading object: %v\n", err)
 		respondWithError(w, 500, "Something went wrong", nil)
 		return
 	}
@@ -115,7 +130,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	video.VideoURL = &videoURL
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
-		log.Printf("error: %v\n", err)
+		fmt.Printf("error while updating database: %v\n", err)
 		respondWithError(w, 500, "Something went wrong", nil)
 		return
 	}
