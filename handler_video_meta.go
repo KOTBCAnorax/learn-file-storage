@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
@@ -41,14 +40,7 @@ func (cfg *apiConfig) handlerVideoMetaCreate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	signedVideo, err := cfg.dbVideoToSignedVideo(video)
-	if err != nil {
-		fmt.Printf("error while presigning url: %v\n", err)
-		respondWithError(w, 500, "Internal error", nil)
-		return
-	}
-
-	respondWithJSON(w, http.StatusCreated, signedVideo)
+	respondWithJSON(w, http.StatusCreated, video)
 }
 
 func (cfg *apiConfig) handlerVideoMetaDelete(w http.ResponseWriter, r *http.Request) {
@@ -103,14 +95,7 @@ func (cfg *apiConfig) handlerVideoGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	signedVideo, err := cfg.dbVideoToSignedVideo(video)
-	if err != nil {
-		fmt.Printf("error while presigning url: %v\n", err)
-		respondWithError(w, 500, "Internal error", nil)
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, signedVideo)
+	respondWithJSON(w, http.StatusOK, video)
 }
 
 func (cfg *apiConfig) handlerVideosRetrieve(w http.ResponseWriter, r *http.Request) {
@@ -129,16 +114,6 @@ func (cfg *apiConfig) handlerVideosRetrieve(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't retrieve videos", err)
 		return
-	}
-
-	for i := range videos {
-		var err error
-		videos[i], err = cfg.dbVideoToSignedVideo(videos[i])
-		if err != nil {
-			fmt.Printf("error while presigning url: %v, video title: %s\n", err, videos[i].Title)
-			respondWithError(w, 500, "Internal error", nil)
-			return
-		}
 	}
 
 	respondWithJSON(w, http.StatusOK, videos)

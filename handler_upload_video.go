@@ -144,7 +144,8 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	videoURL := cfg.s3Bucket + "," + randomVideoID
+	videoURL := cfg.createVideoURL(randomVideoID, true)
+	fmt.Printf("url: %s\n", randomVideoID)
 	video.VideoURL = &videoURL
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
@@ -153,14 +154,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	signedVideo, err := cfg.dbVideoToSignedVideo(video)
-	if err != nil {
-		fmt.Printf("error while presigning url: %v\n", err)
-		respondWithError(w, 500, "Internal error", nil)
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, signedVideo)
+	respondWithJSON(w, http.StatusOK, video)
 }
 
 func processVideoForFastStart(filepath string) (string, error) {

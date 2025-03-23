@@ -2,17 +2,12 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
-
-	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 )
 
 func (cfg apiConfig) ensureAssetsDir() error {
@@ -43,21 +38,11 @@ func mediaTypeToExt(mediaType string) string {
 	return "." + parts[1]
 }
 
-func (cfg *apiConfig) createVideoURL(name string) string {
-	return "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + name
-}
-
-func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
-	presignedClient := s3.NewPresignClient(s3Client)
-	request, err := presignedClient.PresignGetObject(context.TODO(), &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-	}, s3.WithPresignExpires(expireTime))
-	if err != nil {
-		return "", err
+func (cfg *apiConfig) createVideoURL(name string, cloudFront ...bool) string {
+	if len(cloudFront) > 0 && cloudFront[0] {
+		return cfg.s3CfDistribution + name
 	}
-
-	return request.URL, nil
+	return "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + name
 }
 
 func getVideoAspectRatio(path string) (string, error) {
@@ -96,33 +81,4 @@ func getVideoAspectRatio(path string) (string, error) {
 	} else {
 		return "other", nil
 	}
-}
-
-func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
-	// Check if VideoURL is nil or empty
-	if video.VideoURL == nil {
-		// Return the video as is for drafts without a video
-		return video, nil
-	}
-
-	if *video.VideoURL == "" {
-		return video, nil
-	}
-
-	bucketAndKey := strings.Split(*video.VideoURL, ",")
-	if len(bucketAndKey) != 2 {
-		return database.Video{}, fmt.Errorf("video url invalid")
-	}
-
-	bucket := bucketAndKey[0]
-	key := bucketAndKey[1]
-	expireTime := 10 * time.Minute
-
-	presignedURL, err := generatePresignedURL(cfg.s3Client, bucket, key, expireTime)
-	if err != nil {
-		return database.Video{}, fmt.Errorf("failed to generate presigned url: %v", err)
-	}
-	video.VideoURL = &presignedURL
-
-	return video, nil
 }
